@@ -83,14 +83,15 @@ iPhone 要 **iOS 16.4 以上**，而且要從**主畫面的圖示**打開小廚�
 1. 到 <https://dash.cloudflare.com/sign-up> 註冊（免費）。
 2. 左側選 **Workers & Pages** → **Create** → **Create Worker**（或「Start with Hello World」）→ 名稱例如 `kitchen-push` → **Deploy**。
 3. 部署完按 **Edit code**，把編輯器裡的程式**全部刪掉**，換成這個儲存庫的 [`worker/push-worker.js`](worker/push-worker.js) 的內容 → **Deploy**。
-4. 回到這個 Worker 的頁面 → **Settings** → **Variables and Secrets** → **Add**：
+4. 用手機打開 **https://willsha.github.io/-app/tools/keys.html** → **產生金鑰**。金鑰是在你手機上產生的，不會傳到任何地方。
+5. 回到這個 Worker 的頁面 → **Settings** → **Variables and Secrets** → **Add**：
    - Type 選 **Secret**
    - Variable name：`VAPID_PRIVATE_JWK`
-   - Value：通知用的**私鑰**（一段 `{"kty":"EC",...}` 的文字，由設定這個 App 的人提供；不要放進儲存庫）
+   - Value：貼上產生器的 **① 私鑰**（不要傳給別人，也不要放進 GitHub）
    - 按 **Deploy / Save**
-5. 用瀏覽器打開 Worker 的網址（像 `https://kitchen-push.xxx.workers.dev`），看到「小廚房通知伺服器運作中 ✅」就成功了。
-6. 把這個網址填進 `config.js` 的 `push.server`，推上 `main`。
-7. 兩支手機都打開小廚房 → 左上角 ⚙️ **設定** → **🔔 通知** → **開啟通知** → 允許。可以按「傳測試通知」試試看。
+6. 用瀏覽器打開 Worker 的網址（像 `https://kitchen-push.xxx.workers.dev`），看到「小廚房通知伺服器運作中 ✅」就成功了。
+7. 把 Worker 的網址填進 `config.js` 的 `push.server`、產生器的 **② 公鑰**填進 `push.publicKey`，推上 `main`。
+8. 兩支手機都打開小廚房 → 左上角 ⚙️ **設定** → **🔔 通知** → **開啟通知** → 允許。可以按「傳測試通知」試試看。
 
 > `config.js` 裡的 `push.publicKey` 要和 Worker 的私鑰是同一組。如果要換新的金鑰，兩邊都要換，兩支手機也要重新按一次「開啟通知」。
 

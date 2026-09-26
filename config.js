@@ -19,6 +19,6 @@ export const CONFIG = {
   // server：Cloudflare Worker 的網址；publicKey：通知用的公鑰（私鑰只放在 Worker 的 Secret）
   push: {
     server: '',
-    publicKey: 'BJM13CUmw0hZVAwSN_FH_Kfzpo5Hgc5O9YzVdHNfUvWla5sim76UiKG0RKevprT-ji1IjieR7FUTKWhh9fi5C_I',
+    publicKey: '',
   },
 };
