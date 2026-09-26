@@ -1,7 +1,7 @@
 import { CONFIG } from './config.js';
 import { createStore, readLocal } from './store.js';
 import { initTimers, startTimer, stepWithTimers, stopTimer } from './timers.js';
-import { pushConfigured, pushPermission, pushSupported, sendPush, subscribePush, unsubscribePush } from './push.js';
+import { checkExpiryNow, pushConfigured, pushPermission, pushSupported, sendPush, subscribePush, unsubscribePush } from './push.js';
 
 const CATEGORIES = ['家常菜', '湯品', '麵飯', '早午餐', '甜點', '飲料', '其他'];
 const MEALS = ['早餐', '午餐', '晚餐', '宵夜', '隨時'];
@@ -145,7 +145,8 @@ if (!prefs.deviceId) {
 }
 let cart = load('cart', []); // [{ recipeId, qty }]
 let checked = load('checked', {}); // 買菜清單勾選狀態 { 食材名: true }
-let data = { recipes: [], orders: [], photos: [], plans: [], devices: [], meta: [], loaded: false };
+let data = { recipes: [], orders: [], photos: [], plans: [], devices: [], meta: [], pantry: [], loaded: false };
+const scales = {}; // 份量換算：食譜id → 目前選的人份（食譜沒寫人份時是倍數）
 let cookChecks = load('cookChecks', {}); // 做菜清單勾選 { 食譜id: { ing: { 0: true }, step: { 2: true } } }
 let stats = new Map(); // 每道菜的評分與做過次數，每次畫面更新時重算
 let store = null;
@@ -268,6 +269,7 @@ const VIEWS = {
   random: randomView,
   album: albumView,
   week: weekView,
+  pantry: pantryView,
 };
 
 function render() {
@@ -321,7 +323,7 @@ function tabbar(active) {
         ['week', '📅', '一週菜單'],
         ['album', '📸', '相簿'],
       ];
-  const current = { recipe: 'menu', edit: 'menu', new: 'menu', random: 'menu', settings: 'menu' }[active] || active;
+  const current = { recipe: 'menu', edit: 'menu', new: 'menu', random: 'menu', settings: 'menu', pantry: 'shopping' }[active] || active;
   return `<nav class="tabbar">${tabs
     .map(
       ([name, icon, label, badge]) =>
@@ -357,6 +359,7 @@ function menuView() {
       `<a class="icon-btn big-icon" href="#/random" aria-label="今天吃什麼">🎲</a><a class="icon-btn strong" href="#/new">＋ 新增</a>`,
     ) +
     `<main class="page">
+      ${expiryBanner()}
       <a class="random-banner" href="#/random"><span>🎲</span><b>今天吃什麼？</b><small>選擇困難就交給骰子</small></a>
       ${topStrip()}
       <input class="search" type="search" placeholder="🔍 搜尋菜名或食材" value="${esc(ui.q)}" data-input="search">
@@ -476,6 +479,7 @@ function recipeView({ id }) {
       }
       <section class="panel">
         <h3>🥕 備料 <small>${ings.length ? `${countChecked(r.id, 'ing', ings.length)} / ${ings.length}` : ''}</small></h3>
+        ${ings.length ? servingsControl(r) : ''}
         ${ings.length ? ingChecklist(r) : `<p class="muted">還沒填食材${isChef() ? '，點右上角「編輯」補上吧' : ''}</p>`}
       </section>
       <section class="panel">
@@ -515,9 +519,89 @@ function ingChecklist(r) {
       const on = checksOf(r.id).ing[i];
       return `<li class="${on ? 'done' : ''}"><label><input type="checkbox" data-change="cook-check" data-rid="${esc(r.id)}" data-kind="ing" data-i="${i}" ${
         on ? 'checked' : ''
-      }><span class="n">${esc(x.name)}</span><span class="a">${esc(x.amount)}</span></label></li>`;
+      }><span class="n">${esc(x.name)}${inPantry(x.name) ? ' <small class="have-tag">家裡有</small>' : ''}</span><span class="a">${esc(
+        scaleAmount(x.amount, scaleFactor(r)),
+      )}</span></label></li>`;
     })
     .join('')}</ul>`;
+}
+
+// ----- 份量換算 -----
+const baseServings = r => (parseFloat(r.servings) > 0 ? parseFloat(r.servings) : 0);
+const currentServings = r => scales[r.id] || baseServings(r) || 1;
+const scaleFactor = r => (baseServings(r) ? currentServings(r) / baseServings(r) : currentServings(r));
+const fmtNum = n => String(Math.round(n * 100) / 100);
+const CN_AMOUNT = { 半: 0.5, 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+
+// 「2 顆」×2 → 「4 顆」、「1/2 杯」×2 → 「1 杯」、「三瓣」×2 → 「6瓣」；「適量」這種沒有數字的不變
+function scaleAmount(text, f) {
+  if (!text || f === 1) return text || '';
+  let changed = false;
+  let out = String(text).replace(/(\d+(?:\.\d+)?)\s*\/\s*(\d+)|\d+(?:\.\d+)?/g, (m, a, b) => {
+    changed = true;
+    return fmtNum((b ? parseFloat(a) / parseFloat(b) : parseFloat(m)) * f);
+  });
+  if (!changed)
+    out = out.replace(/([一二兩三四五六七八九十])分之([一二兩三四五六七八九十])/, (m, d, n) => {
+      changed = true;
+      return fmtNum((CN_AMOUNT[n] / CN_AMOUNT[d]) * f);
+    });
+  if (!changed) out = out.replace(/^[半一二兩三四五六七八九十](?![\d分之])/, m => fmtNum(CN_AMOUNT[m] * f));
+  return out;
+}
+
+function servingsControl(r) {
+  const base = baseServings(r);
+  const cur = currentServings(r);
+  const min = base ? 1 : 0.5;
+  return `<div class="serv"><span>${base ? '幾人份' : '份量'}</span>
+    <div class="stepper"><button data-action="serv" data-id="${esc(r.id)}" data-d="-1" ${cur <= min ? 'disabled' : ''} aria-label="減少">−</button>
+      <b>${base ? `${fmtNum(cur)} 人份` : `×${fmtNum(cur)}`}</b>
+      <button data-action="serv" data-id="${esc(r.id)}" data-d="1" aria-label="增加">＋</button></div>
+    ${scaleFactor(r) !== 1 ? `<button class="icon-btn" data-action="serv-reset" data-id="${esc(r.id)}">還原</button>` : ''}</div>`;
+}
+
+// ----- 家裡存貨 -----
+const PLACES = ['冷藏', '冷凍', '常溫', '調味料'];
+const PLACE_ICON = { 冷藏: '🧊', 冷凍: '❄️', 常溫: '🧺', 調味料: '🧂' };
+const normFood = s => String(s || '').trim().toLowerCase();
+// 「雞蛋」和「土雞蛋」算同一樣；只有一個字的（像「蔥」）要完全一樣，才不會把「洋蔥」算成「蔥」
+function sameFood(a, b) {
+  a = normFood(a);
+  b = normFood(b);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  return short.length >= 2 && long.includes(short);
+}
+const inPantry = name => data.pantry.find(p => sameFood(p.name, name));
+function daysLeft(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return null;
+  return Math.round((parseKey(date) - parseKey(dateKey(new Date()))) / 86400000);
+}
+function expiryLabel(d) {
+  if (d === null) return '';
+  if (d < 0) return `已過期 ${-d} 天`;
+  if (d === 0) return '今天到期';
+  if (d === 1) return '明天到期';
+  return `${d} 天後到期`;
+}
+const expiringSoon = () =>
+  data.pantry
+    .filter(p => daysLeft(p.expires) !== null && daysLeft(p.expires) <= 3)
+    .sort((a, b) => daysLeft(a.expires) - daysLeft(b.expires));
+const recipesUsing = name => data.recipes.filter(r => (r.ingredients || []).some(i => sameFood(i.name, name)));
+
+function expiryBanner() {
+  const list = expiringSoon();
+  if (!list.length) return '';
+  const uses = [...new Set(list.flatMap(p => recipesUsing(p.name).map(r => r.name)))].slice(0, 3);
+  return `<a class="expiry-banner" href="#/pantry"><b>⏰ 快過期了</b>
+    <span>${list
+      .slice(0, 4)
+      .map(p => `${esc(p.name)}（${expiryLabel(daysLeft(p.expires))}）`)
+      .join('、')}${list.length > 4 ? ' …' : ''}</span>
+    ${uses.length ? `<small>可以做：${uses.map(esc).join('、')}</small>` : ''}</a>`;
 }
 
 function reviewsPanel(r) {
@@ -667,7 +751,7 @@ function cookView({ id }) {
     ${
       ings.length
         ? `<details class="cook-ing panel" ${cook.showIng ? 'open' : ''}><summary>🥕 備料（${countChecked(r.id, 'ing', ings.length)} / ${ings.length}）</summary>
-            ${ingChecklist(r)}</details>`
+            ${servingsControl(r)}${ingChecklist(r)}</details>`
         : ''
     }
     <div class="step-dots">${steps
@@ -894,8 +978,11 @@ function shoppingList() {
       map.get(key).uses.push(`${r.name}${ing.amount ? ` ${ing.amount}` : ''}${qty > 1 ? ` ×${qty}` : ''}${when ? `（${when}）` : ''}`);
     }
   }
-  const items = [...map.values()].sort((a, b) => Number(!!checked[a.name]) - Number(!!checked[b.name]));
-  return { items, missing: [...missing] };
+  const all = [...map.values()].sort((a, b) => Number(!!checked[a.name]) - Number(!!checked[b.name]));
+  // 家裡已經有的（自己加的不算，那是你特地要買的）
+  const have = all.filter(i => !i.extra && inPantry(i.name));
+  const items = all.filter(i => !have.includes(i));
+  return { items, have, missing: [...missing] };
 }
 
 function favoritesRow() {
@@ -927,11 +1014,12 @@ function addShopItem(name) {
 }
 
 function shoppingView() {
-  const { items, missing } = shoppingList();
+  const { items, have, missing } = shoppingList();
   const doneCount = items.filter(i => checked[i.name]).length;
   return (
     header('買菜清單', '', doneCount ? `<button class="icon-btn" data-action="clear-checked">清除勾選</button>` : '') +
     `<main class="page">
+      ${shopTabs('shopping')}
       <p class="muted">根據「進行中」的訂單${prefs.shopPlan ? '和未來 7 天的一週菜單' : ''}自動整理需要的食材。</p>
       <label class="switch-row"><input type="checkbox" data-change="shop-plan" ${prefs.shopPlan ? 'checked' : ''}><span>包含一週菜單（未來 7 天）</span></label>
       <div class="shop-add"><input id="shop-new" placeholder="自己加：牛奶、衛生紙…" enterkeyhint="done" data-enter="shop-add"><button class="btn primary" data-action="shop-add">加入</button></div>
@@ -947,9 +1035,92 @@ function shoppingView() {
               .join('')}</ul>`
           : `<div class="empty"><p>🛒 目前不用買菜</p></div>`
       }
+      ${doneCount ? `<button class="btn block" data-action="bought-to-pantry">🧊 把買好的放進家裡存貨</button>` : ''}
+      ${
+        have.length
+          ? `<details class="have"><summary>🧊 家裡已經有（${have.length}）</summary><ul>${have
+              .map(i => `<li><b>${esc(i.name)}</b><small>${esc(inPantry(i.name).qty || '')} ${esc(inPantry(i.name).place || '')}</small></li>`)
+              .join('')}</ul></details>`
+          : ''
+      }
       ${missing.length ? `<p class="hint">⚠️ 這些菜還沒填食材：${missing.map(esc).join('、')}</p>` : ''}
     </main>`
   );
+}
+
+const shopTabs = active => `<div class="seg page-seg">
+  <a href="#/shopping" class="${active === 'shopping' ? 'on' : ''}">🛒 買菜清單</a>
+  <a href="#/pantry" class="${active === 'pantry' ? 'on' : ''}">🧊 家裡存貨${data.pantry.length ? `（${data.pantry.length}）` : ''}</a></div>`;
+
+// ----- 家裡存貨 -----
+
+const byExpiry = (a, b) => (a.expires || '9999').localeCompare(b.expires || '9999') || a.name.localeCompare(b.name, 'zh-Hant');
+
+function pantryView() {
+  const groups = PLACES.map(pl => [pl, data.pantry.filter(p => (PLACES.includes(p.place) ? p.place : '冷藏') === pl).sort(byExpiry)]).filter(
+    ([, list]) => list.length,
+  );
+  const canTest = pushConfigured() && store?.mode === 'firebase';
+  return (
+    header('家裡存貨') +
+    `<main class="page">
+      ${shopTabs('pantry')}
+      <button class="btn primary block" data-action="pantry-new">＋ 新增存貨</button>
+      ${
+        groups.length
+          ? groups
+              .map(
+                ([pl, list]) =>
+                  `<h2 class="section">${PLACE_ICON[pl]} ${pl}<small> · ${list.length} 樣</small></h2><ul class="pantry">${list.map(pantryRow).join('')}</ul>`,
+              )
+              .join('')
+          : `<div class="empty"><p>🧊 還沒有記錄存貨</p><p class="muted">把冰箱和櫃子裡的東西記下來，買菜清單會自動扣掉家裡已經有的；填了到期日還會提醒你</p></div>`
+      }
+      ${
+        canTest
+          ? `<p class="muted small center">每天早上的過期通知要在 Cloudflare 設定（見 README）<br><button class="icon-btn" data-action="expiry-test">現在檢查一次試試</button></p>`
+          : ''
+      }
+    </main>`
+  );
+}
+
+function pantryRow(p) {
+  const d = daysLeft(p.expires);
+  const uses = d !== null && d <= 3 ? recipesUsing(p.name).slice(0, 3) : [];
+  return `<li class="${d === null ? '' : d < 0 ? 'expired' : d <= 3 ? 'soon' : ''}">
+    <div class="pantry-row">
+      <button class="pantry-main" data-action="pantry-edit" data-id="${esc(p.id)}"><b>${esc(p.name)}</b>${p.qty ? `<small>${esc(p.qty)}</small>` : ''}
+        ${d !== null ? `<span class="exp">${expiryLabel(d)}</span>` : ''}</button>
+      <button class="btn small ghost" data-action="pantry-used" data-id="${esc(p.id)}">用完了</button>
+    </div>
+    ${uses.length ? `<p class="uses">可以做：${uses.map(r => `<a href="#/recipe/${enc(r.id)}">${esc(r.name)}</a>`).join('、')}</p>` : ''}
+  </li>`;
+}
+
+function pantrySheet(p = null) {
+  const x = p || { name: '', qty: '', place: '冷藏', expires: '' };
+  const names = [...new Set([...data.recipes.flatMap(r => (r.ingredients || []).map(i => i.name.trim())), ...shopMeta().favorites])].filter(Boolean);
+  openSheet(`<h3>${p ? '編輯存貨' : '新增存貨'}</h3>
+    <label class="field"><span>是什麼？</span><input id="pt-name" value="${esc(x.name)}" placeholder="牛奶、雞蛋、豆腐…" list="pt-names" autocomplete="off"></label>
+    <datalist id="pt-names">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+    <label class="field"><span>數量（選填）</span><input id="pt-qty" value="${esc(x.qty)}" placeholder="1 瓶、半盒…"></label>
+    <div class="field"><span>放在哪裡</span><div class="chips wrap">${PLACES.map(
+      pl => `<label class="chip-radio"><input type="radio" name="pt-place" value="${pl}" ${pl === (x.place || '冷藏') ? 'checked' : ''}><span>${PLACE_ICON[pl]} ${pl}</span></label>`,
+    ).join('')}</div></div>
+    <div class="field"><span>到期日（選填）</span>
+      <input id="pt-exp" type="date" value="${esc(x.expires)}">
+      <div class="chips wrap">${[
+        [2, '2 天後'],
+        [3, '3 天後'],
+        [7, '1 週後'],
+        [30, '1 個月後'],
+      ]
+        .map(([n, l]) => `<button type="button" class="chip" data-action="pt-days" data-n="${n}">${l}</button>`)
+        .join('')}<button type="button" class="chip" data-action="pt-days" data-n="">不填</button></div>
+    </div>
+    <button class="btn primary block big" data-action="pantry-save" data-id="${p ? esc(p.id) : ''}">儲存</button>
+    ${p ? `<button class="btn ghost danger block" data-action="pantry-used" data-id="${esc(p.id)}">用完了（刪除）</button>` : ''}`);
 }
 
 // ----- 彈出視窗 -----
@@ -1589,6 +1760,71 @@ const actions = {
     }
     save('cart', cart);
     location.hash = '#/cart';
+  },
+  serv(el) {
+    const r = recipeById(el.dataset.id);
+    if (!r) return;
+    const base = baseServings(r);
+    scales[r.id] = Math.max(base ? 1 : 0.5, currentServings(r) + (base ? 1 : 0.5) * Number(el.dataset.d));
+    if (route().name === 'cook') cook.showIng = !!$('.cook-ing')?.open;
+    refresh();
+  },
+  'serv-reset'(el) {
+    delete scales[el.dataset.id];
+    refresh();
+  },
+  'pantry-new': () => pantrySheet(),
+  'pantry-edit'(el) {
+    const p = data.pantry.find(x => x.id === el.dataset.id);
+    if (p) pantrySheet(p);
+  },
+  'pt-days'(el) {
+    const n = el.dataset.n;
+    $('#pt-exp').value = n ? nextDays(Number(n) + 1)[Number(n)] : '';
+  },
+  'pantry-save'(el) {
+    const name = $('#pt-name').value.trim();
+    if (!name) return toast('請輸入是什麼');
+    const old = data.pantry.find(x => x.id === el.dataset.id);
+    const place = document.querySelector('input[name=pt-place]:checked')?.value || '冷藏';
+    persist('pantry', {
+      ...(old || {}),
+      id: old?.id || uid(),
+      name,
+      qty: $('#pt-qty').value.trim(),
+      place,
+      expires: $('#pt-exp').value || '',
+      addedAt: old?.addedAt || Date.now(),
+      updatedAt: Date.now(),
+    }).catch(() => {});
+    closeSheet();
+    toast(old ? '已更新' : `已放進${place}`);
+  },
+  'pantry-used'(el) {
+    const p = data.pantry.find(x => x.id === el.dataset.id);
+    if (!p) return;
+    destroy('pantry', p.id);
+    closeSheet();
+    toast(`${p.name} 用完了 👍`);
+  },
+  'bought-to-pantry'() {
+    const { items } = shoppingList();
+    const bought = items.filter(i => checked[i.name]);
+    for (const i of bought) {
+      if (!inPantry(i.name)) persist('pantry', { id: uid(), name: i.name, qty: '', place: '冷藏', expires: '', addedAt: Date.now(), updatedAt: Date.now() }).catch(() => {});
+    }
+    actions['clear-checked']();
+    toast(`已把 ${bought.length} 樣放進家裡存貨，記得去補到期日`);
+  },
+  async 'expiry-test'() {
+    try {
+      const r = await checkExpiryNow();
+      if (r.skipped) toast('還沒在 Cloudflare 設定每日提醒（見 README）');
+      else if (!r.due) toast('目前沒有快過期的東西 👍');
+      else toast(`有 ${r.due} 樣快過期，已送出 ${r.sent} 則通知`);
+    } catch (err) {
+      toast(err.message);
+    }
   },
   'clear-checked'() {
     // 自己加的東西勾掉後就從清單拿掉（常買裡還在）

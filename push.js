@@ -42,3 +42,11 @@ export async function sendPush(devices, payload) {
   const { results = [] } = await res.json();
   return devices.filter((d, i) => [404, 410].includes(results[i]?.status)).map(d => d.id);
 }
+
+// 請通知伺服器馬上檢查一次快過期的存貨（測試每日提醒用）
+export async function checkExpiryNow() {
+  const res = await fetch(cfg().server.replace(/\/$/, '') + '/expiry-check', { method: 'POST' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `通知伺服器錯誤 ${res.status}`);
+  return json;
+}

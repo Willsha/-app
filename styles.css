@@ -826,3 +826,49 @@ body.sheet-open { overflow: hidden; }
 /* 打字時（鍵盤打開）先藏起底部固定的列，避免被鍵盤推到畫面中間 */
 body.typing .tabbar,
 body.typing .cart-bar { display: none; }
+
+/* 份量換算 */
+.serv { display: flex; align-items: center; gap: 12px; margin: -2px 0 8px; padding: 8px 12px; border-radius: 12px; background: var(--bg); font-size: 14px; color: var(--muted); }
+.serv .stepper b { min-width: 64px; color: var(--text); font-size: 15px; }
+.serv .icon-btn { margin-left: auto; font-size: 14px; }
+.stepper button:disabled { opacity: 0.35; }
+.have-tag { margin-left: 4px; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); font-size: 11px; font-weight: 700; }
+
+/* 買菜 / 存貨切換 */
+.page-seg { margin-bottom: 14px; }
+.seg a { flex: 1; padding: 10px; border-radius: 11px; text-align: center; font-weight: 600; font-size: 15px; }
+.seg a.on { background: var(--card); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); color: var(--primary); }
+details.have { margin: 14px 0; padding: 12px 14px; background: var(--card); border: 1px dashed var(--line); border-radius: var(--radius); }
+details.have summary { font-weight: 700; cursor: pointer; }
+details.have ul { list-style: none; margin: 8px 0 0; padding: 0; }
+details.have li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; color: var(--muted); }
+details.have li b { color: var(--text); font-weight: 600; }
+
+/* 存貨 */
+.pantry { list-style: none; margin: 0; padding: 0; }
+.pantry li { margin-bottom: 8px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--line); border-radius: 14px; }
+.pantry li.soon { border-left-color: var(--warn); }
+.pantry li.expired { border-left-color: var(--danger); }
+.pantry-row { display: flex; align-items: center; gap: 8px; }
+.pantry-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 4px 0; border: 0; background: none; text-align: left; cursor: pointer; }
+.pantry-main b { font-size: 17px; }
+.pantry-main small { color: var(--muted); font-size: 14px; }
+.pantry-main .exp { font-size: 13px; color: var(--muted); }
+.pantry li.soon .exp { color: var(--warn); font-weight: 700; }
+.pantry li.expired .exp { color: var(--danger); font-weight: 700; }
+.pantry .uses { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+.pantry .uses a { color: var(--primary); font-weight: 600; }
+#pt-exp { width: 100%; min-height: 46px; margin-bottom: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--text); font-size: 16px; -webkit-appearance: none; appearance: none; }
+
+/* 快過期提醒 */
+.expiry-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warn) 16%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+}
+.expiry-banner small { color: var(--muted); font-size: 13px; }
