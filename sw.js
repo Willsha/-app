@@ -1,11 +1,13 @@
 // 離線快取：App 本身優先抓網路（才拿得到更新），沒網路時用快取。
-const CACHE = 'kitchen-v3';
+const CACHE = 'kitchen-v4';
 const SHELL = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './store.js',
+  './timers.js',
+  './push.js',
   './config.js',
   './manifest.webmanifest',
   './icons/apple-touch-icon.png',
@@ -61,5 +63,37 @@ self.addEventListener('fetch', event => {
         return res;
       })
       .catch(() => caches.match(request, { ignoreSearch: true }).then(hit => hit || caches.match('./index.html'))),
+  );
+});
+
+// ---------- 通知 ----------
+
+self.addEventListener('push', event => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { body: event.data ? event.data.text() : '' };
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || '我們的小廚房', {
+      body: data.body || '',
+      icon: './icons/icon-192.png',
+      badge: './icons/icon-192.png',
+      tag: data.tag || undefined,
+      data: { url: data.url || './' },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || './', self.registration.scope).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      const client = list.find(c => 'focus' in c);
+      if (client) return client.navigate(url).then(c => (c || client).focus());
+      return self.clients.openWindow(url);
+    }),
   );
 });

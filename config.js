@@ -14,4 +14,11 @@ export const CONFIG = {
     messagingSenderId: '501720692704',
     appId: '1:501720692704:web:ac8771e934eaab32f25d85',
   },
+
+  // 新訂單通知（選填，見 README「新訂單通知」）
+  // server：Cloudflare Worker 的網址；publicKey：通知用的公鑰（私鑰只放在 Worker 的 Secret）
+  push: {
+    server: '',
+    publicKey: 'BJM13CUmw0hZVAwSN_FH_Kfzpo5Hgc5O9YzVdHNfUvWla5sim76UiKG0RKevprT-ji1IjieR7FUTKWhh9fi5C_I',
+  },
 };

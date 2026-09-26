@@ -1,8 +1,8 @@
 // 資料層：有 Firebase 設定就用雲端即時同步，否則存在本機 localStorage。
 // 兩種模式提供同樣的介面：{ mode, put(collection, doc), remove(collection, id) }
-// 資料有變動時會呼叫 onChange({ recipes, orders, loaded })。
+// 資料有變動時會呼叫 onChange({ recipes, orders, photos, plans, devices, meta, loaded })。
 
-const COLLECTIONS = ['recipes', 'orders'];
+export const COLLECTIONS = ['recipes', 'orders', 'photos', 'plans', 'devices', 'meta'];
 const FIREBASE_VERSION = '10.12.2';
 
 export async function createStore({ firebase, kitchenId }, onChange, onError) {
@@ -25,9 +25,13 @@ export function readLocal(collection) {
   }
 }
 
+function snapshot(data, loaded) {
+  return { ...Object.fromEntries(COLLECTIONS.map(c => [c, [...data[c]]])), loaded };
+}
+
 function createLocalStore(onChange) {
   const data = Object.fromEntries(COLLECTIONS.map(c => [c, readLocal(c)]));
-  const emit = () => onChange({ recipes: [...data.recipes], orders: [...data.orders], loaded: true });
+  const emit = () => onChange(snapshot(data, true));
   const write = c => {
     localStorage.setItem('rb.data.' + c, JSON.stringify(data[c]));
     emit();
@@ -77,10 +81,9 @@ async function createFirebaseStore(config, kitchenId, onChange, onError) {
     db = fs.getFirestore(app);
   }
 
-  const data = { recipes: [], orders: [] };
+  const data = Object.fromEntries(COLLECTIONS.map(c => [c, []]));
   const received = new Set();
-  const emit = () =>
-    onChange({ recipes: [...data.recipes], orders: [...data.orders], loaded: received.size === COLLECTIONS.length });
+  const emit = () => onChange(snapshot(data, received.size === COLLECTIONS.length));
 
   for (const c of COLLECTIONS) {
     fs.onSnapshot(
