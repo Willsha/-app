@@ -249,7 +249,7 @@ function tabbar(active) {
 
 function roleView() {
   return `<div class="welcome">
-    <div class="logo">🍳</div>
+    <img class="logo" src="icons/icon.svg" alt="">
     <h1>我們的小廚房</h1>
     <p class="muted">你是哪一位？（之後可以在設定裡更改）</p>
     <button class="role-card" data-action="role" data-role="chef">

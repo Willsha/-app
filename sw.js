@@ -1,5 +1,5 @@
 // 離線快取：App 本身優先抓網路（才拿得到更新），沒網路時用快取。
-const CACHE = 'kitchen-v2';
+const CACHE = 'kitchen-v3';
 const SHELL = [
   './',
   './index.html',
@@ -11,6 +11,7 @@ const SHELL = [
   './icons/apple-touch-icon.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/icon.svg',
 ];
 
 self.addEventListener('install', event => {
