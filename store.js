@@ -1,8 +1,8 @@
 // 資料層：有 Firebase 設定就用雲端即時同步，否則存在本機 localStorage。
 // 兩種模式提供同樣的介面：{ mode, put(collection, doc), remove(collection, id) }
-// 資料有變動時會呼叫 onChange({ recipes, orders, photos, plans, devices, meta, loaded })。
+// 資料有變動時會呼叫 onChange({ recipes, orders, photos, plans, devices, meta, pantry, loaded })。
 
-export const COLLECTIONS = ['recipes', 'orders', 'photos', 'plans', 'devices', 'meta'];
+export const COLLECTIONS = ['recipes', 'orders', 'photos', 'plans', 'devices', 'meta', 'pantry'];
 const FIREBASE_VERSION = '10.12.2';
 
 export async function createStore({ firebase, kitchenId }, onChange, onError) {

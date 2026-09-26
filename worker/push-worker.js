@@ -7,6 +7,12 @@
 //   VAPID_PRIVATE_JWK  ── 私鑰（JSON），公鑰會從裡面算出來
 // 可選的變數：
 //   ALLOWED_ORIGINS    ── 允許呼叫的網站，逗號分隔（預設 https://willsha.github.io）
+//
+// 每日過期提醒（選填，再加一個 Cron Trigger 就會每天執行）：
+//   FIREBASE_PROJECT_ID ── Firebase 專案 ID
+//   FIREBASE_API_KEY    ── config.js 裡的 firebase.apiKey
+//   KITCHEN_ID          ── 廚房代碼（建議設成 Secret）
+//   TIMEZONE            ── 時區，預設 Asia/Hong_Kong
 
 const DEFAULT_ORIGINS = 'https://willsha.github.io';
 // 只轉送到各家瀏覽器的推播伺服器，避免被拿去打任意網址
@@ -35,6 +41,15 @@ export default {
       return new Response('forbidden', { status: 403, headers: cors });
     }
 
+    // App 裡的「傳一次提醒試試」
+    if (new URL(request.url).pathname === '/expiry-check') {
+      try {
+        return Response.json(await expiryReminder(env), { headers: cors });
+      } catch (err) {
+        return Response.json({ error: String(err.message || err) }, { status: 500, headers: cors });
+      }
+    }
+
     let input;
     try {
       input = await request.json();
@@ -61,7 +76,66 @@ export default {
     );
     return Response.json({ results }, { headers: cors });
   },
+
+  // Cron Trigger：每天檢查一次快過期的存貨
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(expiryReminder(env));
+  },
 };
+
+// ---------- 每日過期提醒 ----------
+
+async function expiryReminder(env) {
+  if (!env.FIREBASE_PROJECT_ID || !env.FIREBASE_API_KEY || !env.KITCHEN_ID) {
+    return { skipped: 'FIREBASE_PROJECT_ID / FIREBASE_API_KEY / KITCHEN_ID not set' };
+  }
+  const [pantry, devices] = await Promise.all([listDocs(env, 'pantry'), listDocs(env, 'devices')]);
+  const today = todayIn(env.TIMEZONE || 'Asia/Hong_Kong');
+  const due = pantry
+    .filter(p => p && p.name && /^\d{4}-\d{2}-\d{2}$/.test(p.expires || ''))
+    .map(p => ({ name: p.name, days: daysBetween(today, p.expires) }))
+    .filter(p => p.days <= 2 && p.days >= -3) // 過期太久的就不再提醒
+    .sort((a, b) => a.days - b.days);
+  if (!due.length) return { due: 0, sent: 0 };
+
+  const when = d => (d < 0 ? '已過期' : d === 0 ? '今天到期' : d === 1 ? '明天到期' : `${d} 天後到期`);
+  const message = JSON.stringify({
+    title: '⏰ 食材快過期了',
+    body: due.slice(0, 6).map(p => `${p.name}（${when(p.days)}）`).join('、') + (due.length > 6 ? ' …' : ''),
+    url: './#/pantry',
+    tag: 'expiry',
+  });
+  const vapid = await loadVapid(env.VAPID_PRIVATE_JWK);
+  const subs = devices.filter(d => d && d.sub && d.sub.endpoint);
+  const statuses = await Promise.all(subs.map(d => sendPush(d.sub, message, vapid).catch(() => 0)));
+  return { due: due.length, sent: statuses.filter(s => s >= 200 && s < 300).length };
+}
+
+// 用 Firestore REST API 讀取廚房裡的資料（Firestore 規則允許知道廚房代碼的人讀取）
+async function listDocs(env, collection) {
+  const url =
+    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(env.FIREBASE_PROJECT_ID)}/databases/(default)/documents/` +
+    `kitchens/${encodeURIComponent(env.KITCHEN_ID)}/${collection}?pageSize=300&key=${encodeURIComponent(env.FIREBASE_API_KEY)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Firestore ${res.status}`);
+  const json = await res.json();
+  return (json.documents || []).map(d => decodeValue({ mapValue: { fields: d.fields || {} } }));
+}
+
+function decodeValue(v) {
+  if ('stringValue' in v) return v.stringValue;
+  if ('integerValue' in v) return Number(v.integerValue);
+  if ('doubleValue' in v) return v.doubleValue;
+  if ('booleanValue' in v) return v.booleanValue;
+  if ('timestampValue' in v) return v.timestampValue;
+  if ('mapValue' in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, decodeValue(x)]));
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(decodeValue);
+  return null;
+}
+
+// en-CA 的日期格式剛好是 YYYY-MM-DD
+const todayIn = timeZone => new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+const daysBetween = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / 86400000);
 
 // ---------- Web Push（RFC 8291 加密 + RFC 8292 VAPID）----------
 
