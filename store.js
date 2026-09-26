@@ -85,9 +85,19 @@ async function createFirebaseStore(config, kitchenId, onChange, onError) {
   const received = new Set();
   const emit = () => onChange(snapshot(data, received.size === COLLECTIONS.length));
 
+  // 網路很慢或離線時，最多等 5 秒就先用手上的資料顯示
+  setTimeout(() => {
+    if (received.size === COLLECTIONS.length) return;
+    COLLECTIONS.forEach(c => received.add(c));
+    emit();
+  }, 5000);
+
   for (const c of COLLECTIONS) {
     fs.onSnapshot(
       fs.collection(db, 'kitchens', kitchenId, c),
+      // 空的集合從「快取」變成「雲端確認過」時內容沒變，Firestore 預設不會通知；
+      // 要打開 includeMetadataChanges 才收得到，否則會一直停在「載入中」
+      { includeMetadataChanges: true },
       snap => {
         data[c] = snap.docs.map(d => d.data());
         // 空的本機快取不算載入完成，避免在還沒拿到雲端資料前就以為菜單是空的
