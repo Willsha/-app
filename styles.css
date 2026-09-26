@@ -822,3 +822,7 @@ body.sheet-open { overflow: hidden; }
 .cat-list li { display: flex; align-items: center; border-bottom: 1px dashed var(--line); }
 .cat-list .x { width: 34px; height: 40px; }
 .cat-list .x:disabled { opacity: 0.25; }
+
+/* 打字時（鍵盤打開）先藏起底部固定的列，避免被鍵盤推到畫面中間 */
+body.typing .tabbar,
+body.typing .cart-bar { display: none; }
