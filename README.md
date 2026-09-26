@@ -103,13 +103,7 @@ iPhone 要 **iOS 16.4 以上**，而且要從**主畫面的圖示**打開小廚�
 要先完成第 4 節的通知設定。
 
 1. 把 Cloudflare Worker 的程式**換成最新版**：打開 Worker → **Edit code** → 全部刪掉，貼上 [`worker/push-worker.js`](worker/push-worker.js) 的最新內容 → **Deploy**。
-2. Worker 的 **Settings → Variables and Secrets**，再加 3 個（**Production** 打勾）：
-
-   | Key | Value | Secret |
-   | --- | --- | --- |
-   | `FIREBASE_PROJECT_ID` | `config.js` 裡的 `projectId` | 不用勾 |
-   | `FIREBASE_API_KEY` | `config.js` 裡的 `apiKey` | 不用勾 |
-   | `KITCHEN_ID` | 你們的廚房代碼（App 設定頁看得到） | **要勾** |
+2. Worker 的 **Settings → Variables and Secrets** → **Add**：Key 填 `KITCHEN_ID`，Value 填你們的**廚房代碼**（App 設定頁看得到），**勾 Secret** → **Add variable and deploy**。
 
    時區預設是香港（`Asia/Hong_Kong`）。在其他地方的話，可以再加一個 `TIMEZONE`，例如 `Asia/Taipei`。
 3. Worker 的 **Settings → Trigger Events**（或 **Triggers**）→ **Add** → **Cron Triggers** → 填 `0 1 * * *` → 儲存。

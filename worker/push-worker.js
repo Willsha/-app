@@ -9,10 +9,12 @@
 //   ALLOWED_ORIGINS    ── 允許呼叫的網站，逗號分隔（預設 https://willsha.github.io）
 //
 // 每日過期提醒（選填，再加一個 Cron Trigger 就會每天執行）：
-//   FIREBASE_PROJECT_ID ── Firebase 專案 ID
-//   FIREBASE_API_KEY    ── config.js 裡的 firebase.apiKey
 //   KITCHEN_ID          ── 廚房代碼（建議設成 Secret）
 //   TIMEZONE            ── 時區，預設 Asia/Hong_Kong
+//   FIREBASE_PROJECT_ID / FIREBASE_API_KEY ── 換 Firebase 專案時才需要設定，預設用下面這組
+//
+// Firebase 的網頁設定本來就公開在 App 的 config.js 裡，所以直接寫在這裡當預設值。
+const DEFAULT_FIREBASE = { projectId: 'cooking-app-50515', apiKey: 'AIzaSyCY_9dadglR5yDDMbplEwGsV8duOdP3xVI' };
 
 const DEFAULT_ORIGINS = 'https://willsha.github.io';
 // 只轉送到各家瀏覽器的推播伺服器，避免被拿去打任意網址
@@ -86,9 +88,7 @@ export default {
 // ---------- 每日過期提醒 ----------
 
 async function expiryReminder(env) {
-  if (!env.FIREBASE_PROJECT_ID || !env.FIREBASE_API_KEY || !env.KITCHEN_ID) {
-    return { skipped: 'FIREBASE_PROJECT_ID / FIREBASE_API_KEY / KITCHEN_ID not set' };
-  }
+  if (!env.KITCHEN_ID) return { skipped: 'KITCHEN_ID not set' };
   const [pantry, devices] = await Promise.all([listDocs(env, 'pantry'), listDocs(env, 'devices')]);
   const today = todayIn(env.TIMEZONE || 'Asia/Hong_Kong');
   const due = pantry
@@ -113,9 +113,11 @@ async function expiryReminder(env) {
 
 // 用 Firestore REST API 讀取廚房裡的資料（Firestore 規則允許知道廚房代碼的人讀取）
 async function listDocs(env, collection) {
+  const project = env.FIREBASE_PROJECT_ID || DEFAULT_FIREBASE.projectId;
+  const key = env.FIREBASE_API_KEY || DEFAULT_FIREBASE.apiKey;
   const url =
-    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(env.FIREBASE_PROJECT_ID)}/databases/(default)/documents/` +
-    `kitchens/${encodeURIComponent(env.KITCHEN_ID)}/${collection}?pageSize=300&key=${encodeURIComponent(env.FIREBASE_API_KEY)}`;
+    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(project)}/databases/(default)/documents/` +
+    `kitchens/${encodeURIComponent(env.KITCHEN_ID)}/${collection}?pageSize=300&key=${encodeURIComponent(key)}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Firestore ${res.status}`);
   const json = await res.json();
