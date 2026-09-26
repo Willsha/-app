@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>通知金鑰產生器</title>
+  <style>
+    :root { --bg: #fff7ef; --card: #fff; --text: #3b2a20; --muted: #9a8577; --line: #f0e2d4; --primary: #e8603c; color-scheme: light dark; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #1f1915; --card: #2b231e; --text: #f5e9df; --muted: #a8968a; --line: #3d322b; --primary: #ff7a52; } }
+    body { margin: 0; padding: 24px 16px 40px; background: var(--bg); color: var(--text); font: 16px/1.6 -apple-system, "PingFang TC", sans-serif; }
+    main { max-width: 560px; margin: 0 auto; }
+    h1 { font-size: 22px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin: 14px 0; }
+    .muted { color: var(--muted); font-size: 14px; }
+    textarea { width: 100%; box-sizing: border-box; min-height: 110px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--text); font: 13px ui-monospace, Menlo, monospace; word-break: break-all; }
+    button { width: 100%; min-height: 48px; margin-top: 8px; border: 0; border-radius: 14px; background: var(--primary); color: #fff; font: inherit; font-weight: 700; }
+    button.ghost { background: transparent; color: var(--primary); border: 1px solid var(--line); }
+    [hidden] { display: none; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>🔔 通知金鑰產生器</h1>
+  <p class="muted">金鑰是在你的手機上產生的，不會傳到任何地方。產生一次就好；重新產生的話，兩邊都要換成新的。</p>
+  <button id="gen">產生金鑰</button>
+
+  <div id="out" hidden>
+    <div class="card">
+      <b>① 私鑰 → 貼到 Cloudflare Worker 的 Secret</b>
+      <p class="muted">Variable name 填 <code>VAPID_PRIVATE_JWK</code>，Value 貼這整段。<b>不要傳給別人，也不要放進 GitHub。</b></p>
+      <textarea id="priv" readonly></textarea>
+      <button class="ghost" data-copy="priv">複製私鑰</button>
+    </div>
+    <div class="card">
+      <b>② 公鑰 → 填進 config.js 的 push.publicKey</b>
+      <p class="muted">公鑰可以公開，貼給幫你設定 App 的人（或 Claude）就好。</p>
+      <textarea id="pub" readonly></textarea>
+      <button class="ghost" data-copy="pub">複製公鑰</button>
+    </div>
+  </div>
+</main>
+<script>
+  const b64url = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  document.getElementById('gen').addEventListener('click', async () => {
+    const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+    const { kty, crv, x, y, d } = await crypto.subtle.exportKey('jwk', kp.privateKey);
+    document.getElementById('priv').value = JSON.stringify({ kty, crv, x, y, d });
+    document.getElementById('pub').value = b64url(await crypto.subtle.exportKey('raw', kp.publicKey));
+    document.getElementById('out').hidden = false;
+    document.getElementById('gen').textContent = '重新產生（兩邊都要換）';
+  });
+  document.addEventListener('click', async e => {
+    const id = e.target.dataset.copy;
+    if (!id) return;
+    const el = document.getElementById(id);
+    try {
+      await navigator.clipboard.writeText(el.value);
+    } catch {
+      el.select();
+      document.execCommand('copy');
+    }
+    e.target.textContent = '已複製 ✓';
+  });
+</script>
+</body>
+</html>
