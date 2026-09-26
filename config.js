@@ -18,7 +18,7 @@ export const CONFIG = {
   // 新訂單通知（選填，見 README「新訂單通知」）
   // server：Cloudflare Worker 的網址；publicKey：通知用的公鑰（私鑰只放在 Worker 的 Secret）
   push: {
-    server: '',
-    publicKey: '',
+    server: 'https://kitchen-push.weihuaisha.workers.dev',
+    publicKey: 'BBMsuRO4XZUAzbIpuqBXQKIOIB29rRipykzB75ZxknlVUspAtC7QRAfASzi3jNWblS2w9lmP-sL6QKYXMDZc3Cc',
   },
 };
