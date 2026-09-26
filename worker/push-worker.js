@@ -8,9 +8,11 @@
 // 可選的變數：
 //   ALLOWED_ORIGINS    ── 允許呼叫的網站，逗號分隔（預設 https://willsha.github.io）
 //
-// 每日過期提醒（選填，再加一個 Cron Trigger 就會每天執行）：
+// 每日過期提醒（選填，再加一個「每小時」的 Cron Trigger：0 * * * *）：
 //   KITCHEN_ID          ── 廚房代碼（建議設成 Secret）
-//   TIMEZONE            ── 時區，預設 Asia/Hong_Kong
+//   TIMEZONE            ── 手機沒回報時區時用的預設時區，預設 Asia/Hong_Kong
+// 每支手機會回報自己的時區（tz）和想收到提醒的時間（remindHour，預設 9 點），
+// Worker 每小時執行一次，只通知「現在剛好是它提醒時間」的手機。
 //   FIREBASE_PROJECT_ID / FIREBASE_API_KEY ── 換 Firebase 專案時才需要設定，預設用下面這組
 //
 // Firebase 的網頁設定本來就公開在 App 的 config.js 裡，所以直接寫在這裡當預設值。
@@ -43,10 +45,10 @@ export default {
       return new Response('forbidden', { status: 403, headers: cors });
     }
 
-    // App 裡的「傳一次提醒試試」
+    // App 裡的「現在檢查一次試試」：不看時間，直接檢查並通知所有手機
     if (new URL(request.url).pathname === '/expiry-check') {
       try {
-        return Response.json(await expiryReminder(env), { headers: cors });
+        return Response.json(await expiryReminder(env, { scheduled: false }), { headers: cors });
       } catch (err) {
         return Response.json({ error: String(err.message || err) }, { status: 500, headers: cors });
       }
@@ -79,36 +81,58 @@ export default {
     return Response.json({ results }, { headers: cors });
   },
 
-  // Cron Trigger：每天檢查一次快過期的存貨
+  // Cron Trigger（每小時）：通知現在剛好到提醒時間的手機
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(expiryReminder(env));
+    ctx.waitUntil(expiryReminder(env, { scheduled: true, now: new Date(event.scheduledTime || Date.now()) }));
   },
 };
 
 // ---------- 每日過期提醒 ----------
 
-async function expiryReminder(env) {
+async function expiryReminder(env, { scheduled = false, now = new Date() } = {}) {
   if (!env.KITCHEN_ID) return { skipped: 'KITCHEN_ID not set' };
   const [pantry, devices] = await Promise.all([listDocs(env, 'pantry'), listDocs(env, 'devices')]);
-  const today = todayIn(env.TIMEZONE || 'Asia/Hong_Kong');
-  const due = pantry
+  const fallbackTz = validTz(env.TIMEZONE) || 'Asia/Hong_Kong';
+
+  const targets = devices.filter(d => {
+    if (!d || !d.sub || !d.sub.endpoint) return false;
+    if (!scheduled) return true; // 手動測試：全部都送
+    if (d.remind === false) return false;
+    const hour = Number.isInteger(d.remindHour) ? d.remindHour : 9;
+    return hourIn(validTz(d.tz) || fallbackTz, now) === hour;
+  });
+  if (!targets.length) return { due: 0, sent: 0 };
+
+  const vapid = await loadVapid(env.VAPID_PRIVATE_JWK);
+  let due = 0;
+  let sent = 0;
+  for (const d of targets) {
+    // 「今天」用這支手機所在地的日期來算
+    const list = dueItems(pantry, todayIn(validTz(d.tz) || fallbackTz, now));
+    if (!list.length) continue;
+    due = Math.max(due, list.length);
+    const status = await sendPush(d.sub, expiryMessage(list), vapid).catch(() => 0);
+    if (status >= 200 && status < 300) sent++;
+  }
+  return { due, sent };
+}
+
+function dueItems(pantry, today) {
+  return pantry
     .filter(p => p && p.name && /^\d{4}-\d{2}-\d{2}$/.test(p.expires || ''))
     .map(p => ({ name: p.name, days: daysBetween(today, p.expires) }))
     .filter(p => p.days <= 2 && p.days >= -3) // 過期太久的就不再提醒
     .sort((a, b) => a.days - b.days);
-  if (!due.length) return { due: 0, sent: 0 };
+}
 
+function expiryMessage(list) {
   const when = d => (d < 0 ? '已過期' : d === 0 ? '今天到期' : d === 1 ? '明天到期' : `${d} 天後到期`);
-  const message = JSON.stringify({
+  return JSON.stringify({
     title: '⏰ 食材快過期了',
-    body: due.slice(0, 6).map(p => `${p.name}（${when(p.days)}）`).join('、') + (due.length > 6 ? ' …' : ''),
+    body: list.slice(0, 6).map(p => `${p.name}（${when(p.days)}）`).join('、') + (list.length > 6 ? ' …' : ''),
     url: './#/pantry',
     tag: 'expiry',
   });
-  const vapid = await loadVapid(env.VAPID_PRIVATE_JWK);
-  const subs = devices.filter(d => d && d.sub && d.sub.endpoint);
-  const statuses = await Promise.all(subs.map(d => sendPush(d.sub, message, vapid).catch(() => 0)));
-  return { due: due.length, sent: statuses.filter(s => s >= 200 && s < 300).length };
 }
 
 // 用 Firestore REST API 讀取廚房裡的資料（Firestore 規則允許知道廚房代碼的人讀取）
@@ -135,8 +159,19 @@ function decodeValue(v) {
   return null;
 }
 
+function validTz(tz) {
+  if (!tz || typeof tz !== 'string') return '';
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: tz });
+    return tz;
+  } catch {
+    return '';
+  }
+}
 // en-CA 的日期格式剛好是 YYYY-MM-DD
-const todayIn = timeZone => new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+const todayIn = (timeZone, now = new Date()) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+const hourIn = (timeZone, now) => Number(new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', hourCycle: 'h23' }).format(now));
 const daysBetween = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / 86400000);
 
 // ---------- Web Push（RFC 8291 加密 + RFC 8292 VAPID）----------

@@ -98,17 +98,17 @@ iPhone 要 **iOS 16.4 以上**，而且要從**主畫面的圖示**打開小廚�
 
 > `config.js` 裡的 `push.publicKey` 要和 Worker 的私鑰是同一組。如果要換新的金鑰，兩邊都要換，兩支手機也要重新按一次「開啟通知」。
 
-## 5. 每天早上的過期提醒通知（選填，約 5 分鐘）
+## 5. 每天的過期提醒通知（選填，約 5 分鐘）
 
-要先完成第 4 節的通知設定。
+要先完成第 4 節的通知設定。每支手機可以在 App 的 **設定 → 🔔 通知** 裡自己選「幾點收到」，時間跟著手機所在地的時區（出國、搬家會自動調整）。
 
 1. 把 Cloudflare Worker 的程式**換成最新版**：打開 Worker → **Edit code** → 全部刪掉，貼上 [`worker/push-worker.js`](worker/push-worker.js) 的最新內容 → **Deploy**。
+   如果編輯器顯示「Only the latest version of your Worker can be edited」，就從上方的版本選單選最新的版本。
 2. Worker 的 **Settings → Variables and Secrets** → **Add**：Key 填 `KITCHEN_ID`，Value 填你們的**廚房代碼**（App 設定頁看得到），**勾 Secret** → **Add variable and deploy**。
-
-   時區預設是香港（`Asia/Hong_Kong`）。在其他地方的話，可以再加一個 `TIMEZONE`，例如 `Asia/Taipei`。
-3. Worker 的 **Settings → Trigger Events**（或 **Triggers**）→ **Add** → **Cron Triggers** → 填 `0 1 * * *` → 儲存。
-   這代表每天 UTC 01:00，也就是香港、台灣時間**早上 9 點**。
-4. 測試：App 的「家裡存貨」頁最下面按**現在檢查一次試試**。有 3 天內要過期的東西的話，兩支手機都會收到通知。
+   （可選）`TIMEZONE`：舊版 App 沒回報時區的手機用這個時區，例如 `Europe/London`。
+3. Worker 的 **Settings → Trigger Events** → **Add** → **Cron Triggers** → 填 `0 * * * *`（**每小時**執行一次）→ 儲存。
+   Worker 每到整點會檢查「現在剛好是誰的提醒時間」，只通知那支手機。
+4. 測試：App 的「家裡存貨」頁最下面按**現在檢查一次試試**。有快過期的東西的話，所有開了通知的手機都會馬上收到。
 
 ## 使用小提醒
 
