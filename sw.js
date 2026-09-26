@@ -1,5 +1,5 @@
 // 離線快取：App 本身優先抓網路（才拿得到更新），沒網路時用快取。
-const CACHE = 'kitchen-v1';
+const CACHE = 'kitchen-v3';
 const SHELL = [
   './',
   './index.html',
@@ -11,6 +11,7 @@ const SHELL = [
   './icons/apple-touch-icon.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/icon.svg',
 ];
 
 self.addEventListener('install', event => {
@@ -49,8 +50,9 @@ self.addEventListener('fetch', event => {
 
   if (url.origin !== self.location.origin) return;
 
+  // no-cache：略過瀏覽器的 HTTP 快取（GitHub Pages 預設快取 10 分鐘），更新才會馬上生效
   event.respondWith(
-    fetch(request)
+    fetch(request, { cache: 'no-cache' })
       .then(res => {
         if (res.ok) {
           const copy = res.clone();
