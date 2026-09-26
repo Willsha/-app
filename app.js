@@ -279,7 +279,8 @@ function render() {
   stats = computeStats();
   const r = route();
   const view = VIEWS[r.name] || menuView;
-  app.innerHTML = view(r) + (r.name === 'cook' ? '' : tabbar(r.name));
+  // 做菜模式和編輯食譜不需要分頁列（編輯頁有自己的儲存／取消）
+  app.innerHTML = view(r) + (['cook', 'edit', 'new'].includes(r.name) ? '' : tabbar(r.name));
   if (view === menuView) renderMenuList();
   if (r.name === 'cook') requestWakeLock();
   else releaseWakeLock();
@@ -1685,8 +1686,33 @@ document.addEventListener('keydown', e => {
   }
 });
 
+// iPhone 鍵盤收起後，畫面有時不會回到原位，底部分頁列會卡在鍵盤原本的高度、浮在畫面中間。
+// 打字時先藏起分頁列，鍵盤收起後再捲動一下，讓 iPhone 重新計算畫面位置。
+const isTextField = el =>
+  !!el && (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || (el.tagName === 'INPUT' && !['checkbox', 'radio', 'file', 'button'].includes(el.type)));
+function resetViewport() {
+  const y = window.scrollY;
+  window.scrollTo(0, y + 1);
+  window.scrollTo(0, y);
+}
+document.addEventListener('focusin', e => {
+  if (isTextField(e.target)) document.body.classList.add('typing');
+});
+document.addEventListener('focusout', e => {
+  if (!isTextField(e.target)) return;
+  setTimeout(() => {
+    if (isTextField(document.activeElement)) return; // 只是換到下一個輸入框
+    document.body.classList.remove('typing');
+    resetViewport();
+  }, 120);
+});
+window.visualViewport?.addEventListener('resize', () => {
+  if (!isTextField(document.activeElement)) resetViewport();
+});
+
 window.addEventListener('hashchange', () => {
   closeSheet();
+  if (!isTextField(document.activeElement)) document.body.classList.remove('typing');
   render();
   window.scrollTo(0, 0);
 });
