@@ -400,7 +400,7 @@ function renderMenuList() {
   const el = $('#recipe-list');
   if (!el) return;
   const list = filteredRecipes();
-  if (!data.loaded) el.innerHTML = '<p class="empty">載入中…</p>';
+  if (!data.loaded && !data.recipes.length) el.innerHTML = '<p class="empty">載入中…</p>';
   else if (!data.recipes.length)
     el.innerHTML = `<div class="empty"><p>菜單還是空的</p><a class="btn primary" href="#/new">新增第一道菜</a></div>`;
   else if (!list.length) el.innerHTML = '<p class="empty">找不到符合的菜 🤔</p>';
@@ -1733,7 +1733,8 @@ function onData(next) {
 }
 
 function seedIfEmpty() {
-  if (prefs.seeded) return;
+  // 共用廚房不放範例菜：網路慢時第一次載入可能看起來是空的，會把範例菜塞進另一半的菜單
+  if (prefs.seeded || store?.mode !== 'local') return;
   prefs.seeded = true;
   savePrefs();
   if (data.recipes.length) return;
