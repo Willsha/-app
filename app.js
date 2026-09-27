@@ -1468,6 +1468,7 @@ function notifySection() {
     body = `${
       on
         ? `<p>✅ 這支手機會收到${isChef() ? '新點餐、評分、照片' : '開始做、上菜、照片'}的通知</p>
+           ${remindSettings(me)}
            <div class="two"><button class="btn" data-action="push-test">傳測試通知</button><button class="btn ghost danger" data-action="push-off">關閉通知</button></div>`
         : `<p class="muted">${isChef() ? '另一半點餐時' : '廚師開始做、上菜時'}，手機會跳出通知。</p>
            <button class="btn primary block" data-action="push-on">開啟通知 🔔</button>`
@@ -1476,10 +1477,47 @@ function notifySection() {
   return `<section class="panel"><h3>🔔 通知</h3>${body}</section>`;
 }
 
+// 過期提醒：每支手機自己選幾點收到，依手機目前所在的時區
+const myTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+const remindHourOf = d => (Number.isInteger(d?.remindHour) ? d.remindHour : 9);
+const hourLabel = h =>
+  h === 0 ? '午夜 12:00' : h < 6 ? `凌晨 ${h}:00` : h < 12 ? `早上 ${h}:00` : h === 12 ? '中午 12:00' : `${h < 18 ? '下午' : '晚上'} ${h - 12}:00`;
+
+function remindSettings(me) {
+  const on = me.remind !== false;
+  return `<div class="remind">
+    <label class="switch-row"><input type="checkbox" data-change="remind-on" ${on ? 'checked' : ''}><span>每天提醒快過期的食材</span></label>
+    ${
+      on
+        ? `<label class="remind-time"><span>提醒時間</span><select data-change="remind-hour">${Array.from(
+            { length: 24 },
+            (_, h) => `<option value="${h}" ${h === remindHourOf(me) ? 'selected' : ''}>${hourLabel(h)}</option>`,
+          ).join('')}</select></label>
+          <p class="muted small">跟著手機所在地的時間（目前：${esc(myTimeZone() || '未知')}），換地方會自動調整</p>`
+        : ''
+    }
+  </div>`;
+}
+
+function updateMyDevice(patch) {
+  const me = data.devices.find(d => d.id === prefs.deviceId);
+  if (me) persist('devices', { ...me, ...patch, updatedAt: Date.now() }).catch(() => {});
+}
+
 async function enablePush() {
   try {
     const sub = await subscribePush();
-    await persist('devices', { id: prefs.deviceId, role: prefs.role, sub, updatedAt: Date.now() });
+    const old = data.devices.find(d => d.id === prefs.deviceId) || {};
+    await persist('devices', {
+      remind: true,
+      remindHour: 9,
+      ...old,
+      id: prefs.deviceId,
+      role: prefs.role,
+      sub,
+      tz: myTimeZone(),
+      updatedAt: Date.now(),
+    });
     toast('通知已開啟 🔔');
   } catch (err) {
     toast(err.message || '開啟通知失敗');
@@ -1896,6 +1934,11 @@ document.addEventListener('change', async e => {
     const opt = [...t.options].find(o => o.value === name);
     if (name && !opt) t.insertAdjacentHTML('afterbegin', `<option>${esc(name)}</option>`);
     t.value = name || categories()[0];
+  } else if (t.dataset.change === 'remind-on') {
+    updateMyDevice({ remind: t.checked });
+  } else if (t.dataset.change === 'remind-hour') {
+    updateMyDevice({ remindHour: Number(t.value) });
+    toast(`之後每天 ${hourLabel(Number(t.value))} 提醒`);
   } else if (t.dataset.change === 'shop-plan') {
     prefs.shopPlan = t.checked;
     savePrefs();
@@ -1959,8 +2002,16 @@ document.addEventListener('visibilitychange', () => {
 
 // ---------- 啟動 ----------
 
+let tzSynced = false;
+
 function onData(next) {
   data = next;
+  // 手機換了時區（出國、搬家）就更新，過期提醒才會在當地的時間送到
+  if (data.loaded && !tzSynced) {
+    tzSynced = true;
+    const me = data.devices.find(d => d.id === prefs.deviceId);
+    if (me && myTimeZone() && me.tz !== myTimeZone()) updateMyDevice({ tz: myTimeZone() });
+  }
   if (data.loaded && store) seedIfEmpty();
   // 編輯中不要重畫，免得打到一半的字不見
   const { name } = route();

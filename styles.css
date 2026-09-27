@@ -872,3 +872,10 @@ details.have li b { color: var(--text); font-weight: 600; }
   border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
 }
 .expiry-banner small { color: var(--muted); font-size: 13px; }
+
+/* 過期提醒時間 */
+.remind { margin: 10px 0; padding: 10px 12px; border-radius: 12px; background: var(--bg); }
+.remind .switch-row { margin: 0; }
+.remind-time { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 15px; }
+.remind-time select { flex: 1; padding: 9px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); font-size: 16px; -webkit-appearance: none; appearance: none; }
+.remind .muted { margin: 6px 0 0; }
