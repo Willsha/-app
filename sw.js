@@ -1,5 +1,5 @@
 // 離線快取：App 本身優先抓網路（才拿得到更新），沒網路時用快取。
-const CACHE = 'kitchen-v4';
+const CACHE = 'kitchen-v5';
 const SHELL = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const SHELL = [
   './store.js',
   './timers.js',
   './push.js',
+  './library.js',
   './config.js',
   './manifest.webmanifest',
   './icons/apple-touch-icon.png',
