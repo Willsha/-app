@@ -145,7 +145,6 @@ if (!prefs.deviceId) {
   savePrefs();
 }
 let cart = load('cart', []); // [{ recipeId, qty }]
-let checked = load('checked', {}); // 買菜清單勾選狀態 { 食材名: true }
 let data = { recipes: [], orders: [], photos: [], plans: [], devices: [], meta: [], pantry: [], loaded: false };
 const scales = {}; // 份量換算：食譜id → 目前選的人份（食譜沒寫人份時是倍數）
 let cookChecks = load('cookChecks', {}); // 做菜清單勾選 { 食譜id: { ing: { 0: true }, step: { 2: true } } }
@@ -181,6 +180,17 @@ const saveCategories = items => persist('meta', { id: 'categories', items, updat
 const usedCategories = () => [...new Set([...categories(), ...data.recipes.map(r => r.category).filter(Boolean)])].filter(c => data.recipes.some(r => r.category === c));
 const shopMeta = () => ({ extra: [], favorites: [], ...(metaDoc('shopping') || {}) });
 const saveShop = patch => persist('meta', { ...shopMeta(), ...patch, id: 'shopping', updatedAt: Date.now() }).catch(() => {});
+// 買菜清單的打勾也存在共用資料，兩支手機同步（存成名字陣列；和常買清單分開存，兩個人同時改比較不會互相蓋掉）
+const checkedNames = () => new Set(metaDoc('shopChecked')?.names || []);
+const isChecked = name => checkedNames().has(name);
+const saveChecked = names => persist('meta', { id: 'shopChecked', names: [...names], updatedAt: Date.now() }).catch(() => {});
+function setChecked(name, on) {
+  const names = checkedNames();
+  if (on === names.has(name)) return;
+  if (on) names.add(name);
+  else names.delete(name);
+  saveChecked(names);
+}
 
 // ----- 做菜清單 -----
 const checksOf = rid => cookChecks[rid] || { ing: {}, step: {} };
@@ -982,7 +992,7 @@ function shoppingList() {
       map.get(key).uses.push(`${r.name}${ing.amount ? ` ${ing.amount}` : ''}${qty > 1 ? ` ×${qty}` : ''}${when ? `（${when}）` : ''}`);
     }
   }
-  const all = [...map.values()].sort((a, b) => Number(!!checked[a.name]) - Number(!!checked[b.name]));
+  const all = [...map.values()].sort((a, b) => Number(isChecked(a.name)) - Number(isChecked(b.name)));
   // 家裡已經有的（自己加的不算，那是你特地要買的）
   const have = all.filter(i => !i.extra && inPantry(i.name));
   const items = all.filter(i => !have.includes(i));
@@ -1013,13 +1023,12 @@ function addShopItem(name) {
     extra: extra.some(x => x.name === name) ? extra : [...extra, { name, at: Date.now() }],
     favorites: favorites.includes(name) ? favorites : [...favorites, name], // 自動存進常買，下次點一下就好
   });
-  delete checked[name];
-  save('checked', checked);
+  setChecked(name, false);
 }
 
 function shoppingView() {
   const { items, have, missing } = shoppingList();
-  const doneCount = items.filter(i => checked[i.name]).length;
+  const doneCount = items.filter(i => isChecked(i.name)).length;
   return (
     header('買菜清單', '', doneCount ? `<button class="icon-btn" data-action="clear-checked">清除勾選</button>` : '') +
     `<main class="page">
@@ -1032,8 +1041,8 @@ function shoppingView() {
         items.length
           ? `<p class="progress-text">已買 ${doneCount} / ${items.length}</p><ul class="shop">${items
               .map(
-                i => `<li><label class="${checked[i.name] ? 'done' : ''}"><input type="checkbox" data-change="shop" data-key="${esc(i.name)}" ${
-                  checked[i.name] ? 'checked' : ''
+                i => `<li><label class="${isChecked(i.name) ? 'done' : ''}"><input type="checkbox" data-change="shop" data-key="${esc(i.name)}" ${
+                  isChecked(i.name) ? 'checked' : ''
                 }><span><b>${esc(i.name)}</b><small>${i.uses.map(esc).join('、')}</small></span></label></li>`,
               )
               .join('')}</ul>`
@@ -1901,7 +1910,7 @@ const actions = {
   },
   'bought-to-pantry'() {
     const { items } = shoppingList();
-    const bought = items.filter(i => checked[i.name]);
+    const bought = items.filter(i => isChecked(i.name));
     for (const i of bought) {
       if (!inPantry(i.name)) persist('pantry', { id: uid(), name: i.name, qty: '', place: '冷藏', expires: '', addedAt: Date.now(), updatedAt: Date.now() }).catch(() => {});
     }
@@ -1926,10 +1935,9 @@ const actions = {
   'clear-checked'() {
     // 自己加的東西勾掉後就從清單拿掉（常買裡還在）
     const { extra } = shopMeta();
-    const left = extra.filter(x => !checked[x.name]);
+    const left = extra.filter(x => !isChecked(x.name));
     if (left.length !== extra.length) saveShop({ extra: left });
-    checked = {};
-    save('checked', checked);
+    saveChecked([]);
     refresh();
   },
   'new-kitchen'() {
@@ -1972,9 +1980,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset.change === 'shop') {
-    if (t.checked) checked[t.dataset.key] = true;
-    else delete checked[t.dataset.key];
-    save('checked', checked);
+    setChecked(t.dataset.key, t.checked);
     refresh();
   } else if (t.dataset.change === 'photo' && t.files[0]) {
     try {
@@ -2062,10 +2068,20 @@ document.addEventListener('visibilitychange', () => {
 // ---------- 啟動 ----------
 
 let tzSynced = false;
+let checksMigrated = false;
 
 function onData(next) {
   data = next;
   // 手機換了時區（出國、搬家）就更新，過期提醒才會在當地的時間送到
+  // 舊版的打勾存在手機上，第一次載入時併進共用清單
+  if (data.loaded && !checksMigrated) {
+    checksMigrated = true;
+    const old = Object.keys(load('checked', {}));
+    if (old.length) {
+      saveChecked(new Set([...checkedNames(), ...old]));
+      localStorage.removeItem('rb.checked');
+    }
+  }
   if (data.loaded && !tzSynced) {
     tzSynced = true;
     const me = data.devices.find(d => d.id === prefs.deviceId);
