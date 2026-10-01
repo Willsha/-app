@@ -332,7 +332,8 @@ function tabbar(active) {
         ['menu', '📖', '菜單'],
         ['cart', '🧺', '點餐', cartCount()],
         ['orders', '💌', '訂單', pending],
-        ['week', '📅', '一週菜單'],
+        ['week', '📅', '一週'],
+        ['shopping', '🛒', '買菜'],
         ['album', '📸', '相簿'],
       ];
   const current = { recipe: 'menu', edit: 'menu', new: 'menu', random: 'menu', settings: 'menu', pantry: 'shopping', library: 'menu' }[active] || active;
@@ -1024,6 +1025,10 @@ function addShopItem(name) {
     favorites: favorites.includes(name) ? favorites : [...favorites, name], // 自動存進常買，下次點一下就好
   });
   setChecked(name, false);
+  // 點餐的人加了要買的東西，通知廚師
+  if (!isChef() && !extra.some(x => x.name === name)) {
+    notify('chef', { title: '🛒 買菜清單多了東西', body: name, url: './#/shopping', tag: 'shop' });
+  }
 }
 
 function shoppingView() {
