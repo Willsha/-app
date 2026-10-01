@@ -879,3 +879,15 @@ details.have li b { color: var(--text); font-weight: 600; }
 .remind-time { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 15px; }
 .remind-time select { flex: 1; padding: 9px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); font-size: 16px; -webkit-appearance: none; appearance: none; }
 .remind .muted { margin: 6px 0 0; }
+
+/* 推薦食譜庫 */
+.lib-banner { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding: 12px 16px; border-radius: var(--radius); background: color-mix(in srgb, var(--ok) 12%, var(--card)); border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent); }
+.lib-banner span { font-size: 24px; }
+.lib-banner b { white-space: nowrap; }
+.lib-banner small { margin-left: auto; color: var(--muted); font-size: 13px; text-align: right; }
+.lib-list { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.lib-card { padding: 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.lib-top { display: flex; gap: 12px; align-items: center; }
+.lib-card h3 { font-size: 17px; }
+.lib-health { margin: 10px 0 4px; font-size: 14px; color: var(--ok); font-weight: 600; }
+.lib-ings { margin: 4px 0 10px; font-size: 14px; color: var(--muted); }

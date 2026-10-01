@@ -1,12 +1,13 @@
 import { CONFIG } from './config.js';
 import { createStore, readLocal } from './store.js';
 import { initTimers, startTimer, stepWithTimers, stopTimer } from './timers.js';
+import { LIBRARY, LIBRARY_CATEGORY } from './library.js';
 import { checkExpiryNow, pushConfigured, pushPermission, pushSupported, sendPush, subscribePush, unsubscribePush } from './push.js';
 
 const CATEGORIES = ['家常菜', '湯品', '麵飯', '早午餐', '甜點', '飲料', '其他'];
 const MEALS = ['早餐', '午餐', '晚餐', '宵夜', '隨時'];
 const STATUS = { pending: '等待中', cooking: '製作中', done: '已完成' };
-const EMOJIS = ['🍳', '🍜', '🍲', '🥘', '🍛', '🍝', '🥗', '🍣', '🥟', '🍤', '🍗', '🥩', '🐟', '🥬', '🍰', '🧋'];
+const EMOJIS = ['🍳', '🍜', '🍲', '🥘', '🍛', '🍝', '🥗', '🍣', '🥟', '🍤', '🍗', '🥩', '🐟', '🥬', '🥦', '🥣', '🍰', '🧋'];
 const WISH = '💕 想吃';
 const TOP = '⭐ 高評分';
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
@@ -270,6 +271,7 @@ const VIEWS = {
   album: albumView,
   week: weekView,
   pantry: pantryView,
+  library: libraryView,
 };
 
 function render() {
@@ -323,7 +325,7 @@ function tabbar(active) {
         ['week', '📅', '一週菜單'],
         ['album', '📸', '相簿'],
       ];
-  const current = { recipe: 'menu', edit: 'menu', new: 'menu', random: 'menu', settings: 'menu', pantry: 'shopping' }[active] || active;
+  const current = { recipe: 'menu', edit: 'menu', new: 'menu', random: 'menu', settings: 'menu', pantry: 'shopping', library: 'menu' }[active] || active;
   return `<nav class="tabbar">${tabs
     .map(
       ([name, icon, label, badge]) =>
@@ -361,6 +363,7 @@ function menuView() {
     `<main class="page">
       ${expiryBanner()}
       <a class="random-banner" href="#/random"><span>🎲</span><b>今天吃什麼？</b><small>選擇困難就交給骰子</small></a>
+      ${libraryBanner()}
       ${topStrip()}
       <input class="search" type="search" placeholder="🔍 搜尋菜名或食材" value="${esc(ui.q)}" data-input="search">
       <div class="chips">${cats
@@ -405,7 +408,8 @@ function renderMenuList() {
   const list = filteredRecipes();
   if (!data.loaded && !data.recipes.length) el.innerHTML = '<p class="empty">載入中…</p>';
   else if (!data.recipes.length)
-    el.innerHTML = `<div class="empty"><p>菜單還是空的</p><a class="btn primary" href="#/new">新增第一道菜</a></div>`;
+    el.innerHTML = `<div class="empty"><p>菜單還是空的</p><a class="btn primary" href="#/new">新增第一道菜</a>
+      <p><a class="btn" href="#/library">📚 從推薦食譜庫挑幾道</a></p></div>`;
   else if (!list.length) el.innerHTML = '<p class="empty">找不到符合的菜 🤔</p>';
   else el.innerHTML = list.map(recipeCard).join('');
 }
@@ -1121,6 +1125,56 @@ function pantrySheet(p = null) {
     </div>
     <button class="btn primary block big" data-action="pantry-save" data-id="${p ? esc(p.id) : ''}">儲存</button>
     ${p ? `<button class="btn ghost danger block" data-action="pantry-used" data-id="${esc(p.id)}">用完了（刪除）</button>` : ''}`);
+}
+
+// ----- 推薦食譜庫 -----
+
+const libraryMissing = () => LIBRARY.filter(r => !recipeById(r.id));
+
+function libraryBanner() {
+  const n = libraryMissing().length;
+  if (!n) return '';
+  return `<a class="lib-banner" href="#/library"><span>📚</span><b>推薦食譜庫</b><small>${n} 道健康餐，像是${esc(
+    libraryMissing()[0].name,
+  )}</small></a>`;
+}
+
+function libraryView() {
+  const missing = libraryMissing();
+  return (
+    header('推薦食譜庫', backLink('#/menu')) +
+    `<main class="page">
+      <p class="muted">精選的健康家常菜，按「加入菜單」就會放進你們的菜單，兩支手機都看得到；加入後也可以自己修改。</p>
+      ${missing.length > 1 ? `<button class="btn primary block" data-action="lib-add-all">全部加入（${missing.length} 道）</button>` : ''}
+      <div class="lib-list">${LIBRARY.map(libraryCard).join('')}</div>
+    </main>`
+  );
+}
+
+function libraryCard(r) {
+  const added = recipeById(r.id);
+  const health = (r.notes.match(/每份[^。]*/) || [''])[0];
+  return `<article class="lib-card">
+    <div class="lib-top">${thumb(r, 'mini')}<div class="grow"><h3>${esc(r.name)}</h3>
+      <p class="meta">${esc(r.time)} 分鐘 · ${esc(r.servings)} 人份 · ${r.ingredients.length} 樣食材</p></div></div>
+    ${health ? `<p class="lib-health">💪 ${esc(health)}</p>` : ''}
+    <p class="lib-ings">${r.ingredients.slice(0, 6).map(i => esc(i.name)).join('、')}${r.ingredients.length > 6 ? '…' : ''}</p>
+    ${
+      added
+        ? `<a class="btn small ghost" href="#/recipe/${enc(r.id)}">✓ 已在菜單，看做法</a>`
+        : `<button class="btn small primary" data-action="lib-add" data-id="${esc(r.id)}">＋ 加入菜單</button>`
+    }
+  </article>`;
+}
+
+function addFromLibrary(list) {
+  if (!list.length) return;
+  if (!categories().includes(LIBRARY_CATEGORY)) saveCategories([...categories(), LIBRARY_CATEGORY]);
+  const now = Date.now();
+  list.forEach((r, i) =>
+    persist('recipes', { ...r, category: LIBRARY_CATEGORY, photo: '', addedBy: 'chef', createdAt: now - i, updatedAt: now - i }).catch(() => {}),
+  );
+  toast(list.length === 1 ? `已加入：${list[0].name}` : `已加入 ${list.length} 道菜 🎉`);
 }
 
 // ----- 彈出視窗 -----
@@ -1864,6 +1918,11 @@ const actions = {
       toast(err.message);
     }
   },
+  'lib-add'(el) {
+    const r = LIBRARY.find(x => x.id === el.dataset.id);
+    if (r) addFromLibrary([r]);
+  },
+  'lib-add-all': () => addFromLibrary(libraryMissing()),
   'clear-checked'() {
     // 自己加的東西勾掉後就從清單拿掉（常買裡還在）
     const { extra } = shopMeta();
