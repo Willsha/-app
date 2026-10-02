@@ -172,15 +172,19 @@ const cartCount = () => cart.reduce((n, i) => n + i.qty, 0);
 const activeOrders = () => data.orders.filter(o => o.status !== 'done');
 const otherRole = () => (isChef() ? 'diner' : 'chef');
 
-// ----- 共用設定（分類、常買清單）存在 meta 集合 -----
+// ----- 共用設定（分類、買菜清單）存在 meta 集合 -----
 const metaDoc = id => data.meta.find(m => m.id === id);
 const categories = () => (metaDoc('categories')?.items?.length ? metaDoc('categories').items : CATEGORIES);
 const saveCategories = items => persist('meta', { id: 'categories', items, updatedAt: Date.now() }).catch(() => {});
 // 目前有菜的分類（包含已經從清單移除、但還有菜在用的舊分類）
 const usedCategories = () => [...new Set([...categories(), ...data.recipes.map(r => r.category).filter(Boolean)])].filter(c => data.recipes.some(r => r.category === c));
-const shopMeta = () => ({ extra: [], favorites: [], ...(metaDoc('shopping') || {}) });
-const saveShop = patch => persist('meta', { ...shopMeta(), ...patch, id: 'shopping', updatedAt: Date.now() }).catch(() => {});
-// 買菜清單的打勾也存在共用資料，兩支手機同步（存成名字陣列；和常買清單分開存，兩個人同時改比較不會互相蓋掉）
+const shopMeta = () => ({ extra: [], ...(metaDoc('shopping') || {}) });
+// 舊版「常買」留下的 favorites 欄位一併清掉
+const saveShop = patch => {
+  const { favorites, ...rest } = shopMeta();
+  return persist('meta', { ...rest, ...patch, id: 'shopping', updatedAt: Date.now() }).catch(() => {});
+};
+// 買菜清單的打勾也存在共用資料，兩支手機同步（存成名字陣列；和自己加的項目分開存，兩個人同時改比較不會互相蓋掉）
 const checkedNames = () => new Set(metaDoc('shopChecked')?.names || []);
 const isChecked = name => checkedNames().has(name);
 const saveChecked = names => persist('meta', { id: 'shopChecked', names: [...names], updatedAt: Date.now() }).catch(() => {});
@@ -1000,30 +1004,11 @@ function shoppingList() {
   return { items, have, missing: [...missing] };
 }
 
-function favoritesRow() {
-  const { favorites, extra } = shopMeta();
-  if (!favorites.length) return '';
-  const inList = new Set(extra.map(x => x.name));
-  return `<div class="favs"><div class="favs-head"><b>常買</b><small>點一下加入清單</small>
-      <button class="icon-btn" data-action="fav-edit">${ui.favEdit ? '完成' : '編輯'}</button></div>
-    <div class="chips wrap">${[...favorites]
-      .sort((a, b) => a.localeCompare(b, 'zh-Hant'))
-      .map(name =>
-        ui.favEdit
-          ? `<button class="chip edit" data-action="fav-remove" data-name="${esc(name)}">${esc(name)} ✕</button>`
-          : `<button class="chip ${inList.has(name) ? 'on' : ''}" data-action="fav-add" data-name="${esc(name)}">${inList.has(name) ? '✓ ' : '＋ '}${esc(name)}</button>`,
-      )
-      .join('')}</div></div>`;
-}
-
 function addShopItem(name) {
   name = name.trim();
   if (!name) return;
-  const { extra, favorites } = shopMeta();
-  saveShop({
-    extra: extra.some(x => x.name === name) ? extra : [...extra, { name, at: Date.now() }],
-    favorites: favorites.includes(name) ? favorites : [...favorites, name], // 自動存進常買，下次點一下就好
-  });
+  const { extra } = shopMeta();
+  saveShop({ extra: extra.some(x => x.name === name) ? extra : [...extra, { name, at: Date.now() }] });
   setChecked(name, false);
   // 點餐的人加了要買的東西，通知廚師
   if (!isChef() && !extra.some(x => x.name === name)) {
@@ -1041,7 +1026,6 @@ function shoppingView() {
       <p class="muted">根據「進行中」的訂單${prefs.shopPlan ? '和未來 7 天的一週菜單' : ''}自動整理需要的食材。</p>
       <label class="switch-row"><input type="checkbox" data-change="shop-plan" ${prefs.shopPlan ? 'checked' : ''}><span>包含一週菜單（未來 7 天）</span></label>
       <div class="shop-add"><input id="shop-new" placeholder="自己加：牛奶、衛生紙…" enterkeyhint="done" data-enter="shop-add"><button class="btn primary" data-action="shop-add">加入</button></div>
-      ${favoritesRow()}
       ${
         items.length
           ? `<p class="progress-text">已買 ${doneCount} / ${items.length}</p><ul class="shop">${items
@@ -1118,7 +1102,7 @@ function pantryRow(p) {
 
 function pantrySheet(p = null) {
   const x = p || { name: '', qty: '', place: '冷藏', expires: '' };
-  const names = [...new Set([...data.recipes.flatMap(r => (r.ingredients || []).map(i => i.name.trim())), ...shopMeta().favorites])].filter(Boolean);
+  const names = [...new Set([...data.recipes.flatMap(r => (r.ingredients || []).map(i => i.name.trim())), ...shopMeta().extra.map(x => x.name)])].filter(Boolean);
   openSheet(`<h3>${p ? '編輯存貨' : '新增存貨'}</h3>
     <label class="field"><span>是什麼？</span><input id="pt-name" value="${esc(x.name)}" placeholder="牛奶、雞蛋、豆腐…" list="pt-names" autocomplete="off"></label>
     <datalist id="pt-names">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
@@ -1788,20 +1772,6 @@ const actions = {
     addShopItem(input.value);
     input.value = '';
   },
-  'fav-add'(el) {
-    const name = el.dataset.name;
-    const { extra } = shopMeta();
-    if (extra.some(x => x.name === name)) saveShop({ extra: extra.filter(x => x.name !== name) });
-    else addShopItem(name);
-  },
-  'fav-edit'() {
-    ui.favEdit = !ui.favEdit;
-    refresh();
-  },
-  'fav-remove'(el) {
-    const { favorites } = shopMeta();
-    saveShop({ favorites: favorites.filter(n => n !== el.dataset.name) });
-  },
   'cat-add'() {
     const input = $('#cat-new');
     const name = input.value.trim();
@@ -1938,7 +1908,7 @@ const actions = {
   },
   'lib-add-all': () => addFromLibrary(libraryMissing()),
   'clear-checked'() {
-    // 自己加的東西勾掉後就從清單拿掉（常買裡還在）
+    // 自己加的東西勾掉後就從清單拿掉
     const { extra } = shopMeta();
     const left = extra.filter(x => !isChecked(x.name));
     if (left.length !== extra.length) saveShop({ extra: left });
