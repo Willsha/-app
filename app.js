@@ -1132,7 +1132,7 @@ const libraryMissing = () => LIBRARY.filter(r => !recipeById(r.id));
 function libraryBanner() {
   const n = libraryMissing().length;
   if (!n) return '';
-  return `<a class="lib-banner" href="#/library"><span>📚</span><b>推薦食譜庫</b><small>${n} 道健康餐，像是${esc(
+  return `<a class="lib-banner" href="#/library"><span>📚</span><b>推薦食譜庫</b><small>${n} 道推薦菜，像是${esc(
     libraryMissing()[0].name,
   )}</small></a>`;
 }
@@ -1142,7 +1142,7 @@ function libraryView() {
   return (
     header('推薦食譜庫', backLink('#/menu')) +
     `<main class="page">
-      <p class="muted">精選的健康家常菜，按「加入菜單」就會放進你們的菜單，兩支手機都看得到；加入後也可以自己修改。</p>
+      <p class="muted">精選的家常菜和健康餐，按「加入菜單」就會放進你們的菜單，兩支手機都看得到；加入後也可以自己修改。</p>
       ${missing.length > 1 ? `<button class="btn primary block" data-action="lib-add-all">全部加入（${missing.length} 道）</button>` : ''}
       <div class="lib-list">${LIBRARY.map(libraryCard).join('')}</div>
     </main>`
@@ -1167,10 +1167,13 @@ function libraryCard(r) {
 
 function addFromLibrary(list) {
   if (!list.length) return;
-  if (!categories().includes(LIBRARY_CATEGORY)) saveCategories([...categories(), LIBRARY_CATEGORY]);
+  // 食譜庫的菜可以指定自己的分類（沒指定就是「健康餐」），沒有的分類自動加進分類清單
+  const catOf = r => r.category || LIBRARY_CATEGORY;
+  const missingCats = [...new Set(list.map(catOf))].filter(c => !categories().includes(c));
+  if (missingCats.length) saveCategories([...categories(), ...missingCats]);
   const now = Date.now();
   list.forEach((r, i) =>
-    persist('recipes', { ...r, category: LIBRARY_CATEGORY, photo: '', addedBy: 'chef', createdAt: now - i, updatedAt: now - i }).catch(() => {}),
+    persist('recipes', { ...r, category: catOf(r), photo: '', addedBy: 'chef', createdAt: now - i, updatedAt: now - i }).catch(() => {}),
   );
   toast(list.length === 1 ? `已加入：${list[0].name}` : `已加入 ${list.length} 道菜 🎉`);
 }
