@@ -151,7 +151,7 @@ let cookChecks = load('cookChecks', {}); // 做菜清單勾選 { 食譜id: { ing
 let stats = new Map(); // 每道菜的評分與做過次數，每次畫面更新時重算
 let store = null;
 let storeError = '';
-const ui = { category: '全部', q: '', randCat: '全部', randId: null, weekOffset: 0, planDate: null, planMeal: '晚餐', planQ: '' };
+const ui = { shopDoneOpen: false, category: '全部', q: '', randCat: '全部', randId: null, weekOffset: 0, planDate: null, planMeal: '晚餐', planQ: '' };
 let pendingPhoto = null; // 剛選好、還沒存的相簿照片
 let draft = null; // 編輯中的食譜（照片等表單外的欄位）
 let cook = null; // 做菜模式 { id, step, showIng }
@@ -1016,9 +1016,16 @@ function addShopItem(name) {
   }
 }
 
+const shopRow = i => `<li><label class="${isChecked(i.name) ? 'done' : ''}"><input type="checkbox" data-change="shop" data-key="${esc(i.name)}" ${
+  isChecked(i.name) ? 'checked' : ''
+}><span><b>${esc(i.name)}</b><small>${i.uses.map(esc).join('、')}</small></span></label></li>`;
+
 function shoppingView() {
   const { items, have, missing } = shoppingList();
-  const doneCount = items.filter(i => isChecked(i.name)).length;
+  // 買好的收進下面的「已買」，清單上只留還沒買的；點已買裡的項目可以取消
+  const todo = items.filter(i => !isChecked(i.name));
+  const done = items.filter(i => isChecked(i.name));
+  const doneCount = done.length;
   return (
     header('買菜清單', '', doneCount ? `<button class="icon-btn" data-action="clear-checked">清除勾選</button>` : '') +
     `<main class="page">
@@ -1028,14 +1035,17 @@ function shoppingView() {
       <div class="shop-add"><input id="shop-new" placeholder="自己加：牛奶、衛生紙…" enterkeyhint="done" data-enter="shop-add"><button class="btn primary" data-action="shop-add">加入</button></div>
       ${
         items.length
-          ? `<p class="progress-text">已買 ${doneCount} / ${items.length}</p><ul class="shop">${items
-              .map(
-                i => `<li><label class="${isChecked(i.name) ? 'done' : ''}"><input type="checkbox" data-change="shop" data-key="${esc(i.name)}" ${
-                  isChecked(i.name) ? 'checked' : ''
-                }><span><b>${esc(i.name)}</b><small>${i.uses.map(esc).join('、')}</small></span></label></li>`,
-              )
-              .join('')}</ul>`
+          ? `<p class="progress-text">已買 ${doneCount} / ${items.length}</p>${
+              todo.length ? `<ul class="shop">${todo.map(shopRow).join('')}</ul>` : `<div class="empty"><p>🎉 全部買好了</p></div>`
+            }`
           : `<div class="empty"><p>🛒 目前不用買菜</p></div>`
+      }
+      ${
+        done.length
+          ? `<details class="shop-done" id="shop-done" ${ui.shopDoneOpen ? 'open' : ''}><summary>✅ 已買（${done.length}）</summary><ul class="shop">${done
+              .map(shopRow)
+              .join('')}</ul></details>`
+          : ''
       }
       ${doneCount ? `<button class="btn block" data-action="bought-to-pantry">🧊 把買好的放進家裡存貨</button>` : ''}
       ${
@@ -1910,7 +1920,9 @@ const actions = {
     if (r) addFromLibrary([r]);
   },
   'lib-add-all': () => addFromLibrary(libraryMissing()),
-  'clear-checked'() {
+  'clear-checked'(el) {
+    // 按右上角的按鈕才問；「放進家裡存貨」也會呼叫這裡，那時不用問
+    if (el && !confirm('取消全部的勾選？\n自己加的、已經買好的東西會從清單拿掉；食譜需要的食材會回到「還沒買」。')) return;
     // 自己加的東西勾掉後就從清單拿掉
     const { extra } = shopMeta();
     const left = extra.filter(x => !isChecked(x.name));
@@ -1944,6 +1956,15 @@ document.addEventListener('click', e => {
   e.preventDefault();
   fn(el, e);
 });
+
+// 記住「已買」有沒有打開，重畫畫面時保持原樣（toggle 不會冒泡，要用 capture）
+document.addEventListener(
+  'toggle',
+  e => {
+    if (e.target.id === 'shop-done') ui.shopDoneOpen = e.target.open;
+  },
+  true,
+);
 
 document.addEventListener('input', e => {
   if (e.target.dataset.input === 'search') {
