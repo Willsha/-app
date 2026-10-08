@@ -835,6 +835,9 @@ body.typing .cart-bar { display: none; }
 .seg a.on { background: var(--card); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); color: var(--primary); }
 details.have { margin: 14px 0; padding: 12px 14px; background: var(--card); border: 1px dashed var(--line); border-radius: var(--radius); }
 details.have summary { font-weight: 700; cursor: pointer; }
+details.shop-done { margin: 14px 0; }
+details.shop-done summary { padding: 6px 2px; font-weight: 700; color: var(--muted); cursor: pointer; }
+details.shop-done .shop { margin-top: 8px; }
 details.have ul { list-style: none; margin: 8px 0 0; padding: 0; }
 details.have li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; color: var(--muted); }
 details.have li b { color: var(--text); font-weight: 600; }
